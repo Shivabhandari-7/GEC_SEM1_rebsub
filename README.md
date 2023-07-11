@@ -13,7 +13,7 @@ Getting Started
 To initialize the project, follow these steps:
 
 1. Clone the repository to your local machine using the following command:
-"git clone <repository-url>"
+``` git clone <repository-url> ```
 
 2. Open the project in Visual Studio Code or Microsoft Visual Studio.
 
@@ -26,7 +26,7 @@ Please refer to the respective weekly assessment folders for detailed instructio
 
 # Additional Resources
 For detailed instructions on how to install the necessary files, clone the repository, and more, please refer to the Installation Guide.
-[https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository]
+* [https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository]
 
 
 # Contact
