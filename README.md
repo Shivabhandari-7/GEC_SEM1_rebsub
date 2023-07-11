@@ -13,7 +13,7 @@ Getting Started
 To initialize the project, follow these steps:
 
 1. Clone the repository to your local machine using the following command:
-git clone <repository-url>
+"git clone <repository-url>"
 
 2. Open the project in Visual Studio Code or Microsoft Visual Studio.
 
@@ -34,4 +34,6 @@ If you have any questions or need assistance with the project, feel free to cont
 
 Name: Shiva Bhandari
 Email: shiva.bhandari.co.uk@gmail.com
+
+
 Happy coding!
