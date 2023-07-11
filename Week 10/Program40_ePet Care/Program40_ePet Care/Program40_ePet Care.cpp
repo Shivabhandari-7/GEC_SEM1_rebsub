@@ -1,101 +1,28 @@
 #include <iostream>
-
-
-
-
-class Pet {
-protected:
-    int m_hunger;
-    int m_bored;
-
-public:
-    Pet(int hunger = 0, int boredom = 0) : m_hunger(hunger), m_bored(boredom) {}
-
-    virtual ~Pet() {}
-
-    virtual void Talk() const {
-        std::cout << "I am your pet and I feel ";
-        int mood = GetMood();
-
-        if (mood > 15)
-            std::cout << "mad";
-        else if (mood > 10)
-            std::cout << "frustrated";
-        else if (mood > 5)
-            std::cout << "okay";
-        else
-            std::cout << "happy";
-
-        std::cout << std::endl;
-        PassingTime();
-    }
-
-    void Feed(int food = 4) {
-        std::cout << "Burp!" << std::endl;
-        m_hunger -= food;
-        if (m_hunger < 0)
-            m_hunger = 0;
-        PassingTime();
-    }
-
-    void Play(int fun = 4) {
-        std::cout << "Wheee!" << std::endl;
-        m_bored -= fun;
-        if (m_bored < 0)
-            m_bored = 0;
-        PassingTime();
-    }
-
-private:
-    int GetMood() const {
-        return m_hunger + m_bored;
-    }
-
-    void PassingTime(int time = 1) {
-        m_hunger += time;
-        m_bored += time;
-    }
-};
-
-class Dog : public Pet {
-public:
-    void Talk() const override {
-        std::cout << "Woof! ";
-        Pet::Talk();
-    }
-};
-
-class Cat : public Pet {
-public:
-    void Talk() const override {
-        std::cout << "Meow! ";
-        Pet::Talk();
-    }
-};
-
-class Hamster : public Pet {
-public:
-    void Talk() const override {
-        std::cout << "Squeak! ";
-        Pet::Talk();
-    }
-};
+#include "Pet.h"
+#include "Dog.h"
+#include "Cat.h"
+#include "Hamster.h"
 
 int main() {
+    int choice;
     Pet* pet = nullptr;
 
-    std::cout << "Which pet do you want? (0-Dog, 1-Cat, 2-Hamster): ";
-    int choice;
+    std::cout << "Which pet would you like to choose?" << std::endl;
+    std::cout << "1. Dog" << std::endl;
+    std::cout << "2. Cat" << std::endl;
+    std::cout << "3. Hamster" << std::endl;
+    std::cout << "Enter your choice (1-3): ";
     std::cin >> choice;
 
     switch (choice) {
-    case 0:
+    case 1:
         pet = new Dog();
         break;
-    case 1:
+    case 2:
         pet = new Cat();
         break;
-    case 2:
+    case 3:
         pet = new Hamster();
         break;
     default:
@@ -103,23 +30,19 @@ int main() {
         return 0;
     }
 
-    pet->Talk();
-
     while (true) {
-        std::cout << "Options:\n";
-        std::cout << "0 - Quit\n";
-        std::cout << "1 - Listen to your pet\n";
-        std::cout << "2 - Feed your pet\n";
-        std::cout << "3 - Play with your pet\n";
-        std::cout << "Enter your choice: ";
-
         int option;
+        std::cout << std::endl;
+        std::cout << "0 - Quit" << std::endl;
+        std::cout << "1 - Listen to your pet" << std::endl;
+        std::cout << "2 - Feed your pet" << std::endl;
+        std::cout << "3 - Play with your pet" << std::endl;
+        std::cout << "Enter your choice (0-3): ";
         std::cin >> option;
 
         switch (option) {
         case 0:
             delete pet;
-            std::cout << "Exiting..." << std::endl;
             return 0;
         case 1:
             pet->Talk();
@@ -132,10 +55,6 @@ int main() {
             break;
         default:
             std::cout << "Invalid choice. Try again." << std::endl;
-            break;
         }
     }
-
-    return 0;
 }
-
