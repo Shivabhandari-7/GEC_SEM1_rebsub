@@ -1,20 +1,60 @@
-// Program40_ePet Care.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 #include <iostream>
+#include "Pet.h"
+#include "Dog.h"
+#include "Cat.h"
+#include "Hamster.h"
 
-int main()
-{
-    std::cout << "Hello World!\n";
+int main() {
+    int choice;
+    Pet* pet = nullptr;
+
+    std::cout << "Which pet would you like to choose?" << std::endl;
+    std::cout << "1. Dog" << std::endl;
+    std::cout << "2. Cat" << std::endl;
+    std::cout << "3. Hamster" << std::endl;
+    std::cout << "Enter your choice (1-3): ";
+    std::cin >> choice;
+
+    switch (choice) {
+    case 1:
+        pet = new Dog();
+        break;
+    case 2:
+        pet = new Cat();
+        break;
+    case 3:
+        pet = new Hamster();
+        break;
+    default:
+        std::cout << "Invalid choice. Exiting..." << std::endl;
+        return 0;
+    }
+
+    while (true) {
+        int option;
+        std::cout << std::endl;
+        std::cout << "0 - Quit" << std::endl;
+        std::cout << "1 - Listen to your pet" << std::endl;
+        std::cout << "2 - Feed your pet" << std::endl;
+        std::cout << "3 - Play with your pet" << std::endl;
+        std::cout << "Enter your choice (0-3): ";
+        std::cin >> option;
+
+        switch (option) {
+        case 0:
+            delete pet;
+            return 0;
+        case 1:
+            pet->Talk();
+            break;
+        case 2:
+            pet->Feed();
+            break;
+        case 3:
+            pet->Play();
+            break;
+        default:
+            std::cout << "Invalid choice. Try again." << std::endl;
+        }
+    }
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
