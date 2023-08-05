@@ -1,16 +1,15 @@
-# Game Engine Creation Semester 1
+# Games Engine Creation Semester 1
 
-This repository contains the weekly assessments for the Game Design and Programming course at Staffordshire University. Each week, new files will be uploaded covering different topics related to game development.
+This repository contains the weekly assessments for the Games Design and Programming course at Staffordshire University. New files will be uploaded each week covering different topics.
 
 # Installation
 Before using this project, please ensure that you have the following programs installed on your computer:
 
-Visual Studio Code
 Microsoft Visual Studio
 Getting Started
 
 
-To initialize the project, follow these steps:
+To initialise the project, follow these steps:
 
 1. Clone the repository to your local machine using the following command:
 ``` git clone <repository-url> ```
@@ -20,7 +19,7 @@ To initialize the project, follow these steps:
 3. Explore the weekly assessment files to access the code and materials related to each topic.
 
 # Weekly Assessments
-The weekly assessments are organized in folders according to the week number. Each folder contains the files specific to that week's topic.
+The weekly assessments are organised in folders according to the week number. Each folder contains files specific to that week's topic.
 
 Please refer to the respective weekly assessment folders for detailed instructions, code samples, and any additional resources provided.
 
