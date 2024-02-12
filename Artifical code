@@ -1,0 +1,555 @@
+using System.Collections;
+using System.Collections.Generic;
+using Unity.VisualScripting;
+using UnityEngine;
+
+public class SteeringBehaviour_Flee : SteeringBehaviour
+{
+  [Header("Flee Properties")]
+  [Header("Settings")]
+  public Transform m_FleeTarget;
+  public float m_FleeRadius;
+
+  [Space(10)]
+
+  [Header("Debugs")]
+  [SerializeField]
+  protected Color m_Debug_RadiusColour = Color.yellow;
+
+  public override Vector2 CalculateForce()
+  {
+    // Check if a flee target is assigned
+    if (m_FleeTarget == null)
+    {
+      return Vector2.zero;
+    }
+
+    // Calculate the distance to the flee target
+    Vector2 direction = m_FleeTarget.position - transform.position;
+    float distance = direction.magnitude;
+
+    // Check if the target is within the flee radius
+    if (distance > m_FleeRadius)
+    {
+      return Vector2.zero;
+    }
+
+    // Calculate the desired flee velocity 
+    Vector2 desiredVelocity = direction * -1.0f;
+    desiredVelocity.Normalize();
+
+    // Scale the desired velocity by the flee weight
+    desiredVelocity *= m_Weight;
+
+    // Calculate the fleeing steering force
+    Vector2 force = desiredVelocity - m_Velocity;
+    force *= m_MaxForce;
+
+    // Limit the force
+    force = Vector2.ClampMagnitude(force, m_MaxForce);
+
+    return force;
+  }
+
+  protected override void OnDrawGizmosSelected()
+  {
+    if (Application.isPlaying)
+    {
+      if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
+      {
+        Gizmos.color = m_Debug_RadiusColour;
+        Gizmos.DrawWireSphere(transform.position, m_FleeRadius);
+
+        base.OnDrawGizmosSelected();
+      }
+    }
+  }
+}
+
+
+
+
+
+
+---------------------------------------------------------------------------------------- 
+----------------------------------------------------------------------------------------
+
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.InteropServices.WindowsRuntime;
+using UnityEngine;
+
+public class SteeringBehaviour_Pursuit : SteeringBehaviour
+{
+  [Header("Pursuit Properties")]
+  [Header("Settings")]
+  public MovingEntity m_PursuingEntity;
+
+  public override Vector2 CalculateForce()
+  {
+    // Check if a pursuing entity is assigned
+    if (m_PursuingEntity == null)
+    {
+      return Vector2.zero;
+    }
+
+    // Calculate the distance and direction to the pursuing entity
+    Vector2 direction = m_PursuingEntity.position - transform.position;
+    float distance = direction.magnitude;
+
+    // Predict the future position of the pursuing entity based on its velocity
+    Vector2 pursuingEntityFuturePosition = m_PursuingEntity.position + m_PursuingEntity.velocity * distance / m_MaxSpeed;
+
+    // Seek the predicted future position of the pursuing entity
+    Vector2 seekForce = base.Seek(pursuingEntityFuturePosition);
+
+    return seekForce;
+  }
+}
+
+
+
+
+---------------------------------------------------------------------------------------- 
+----------------------------------------------------------------------------------------
+
+
+
+
+"Evade"
+
+
+public override Vector2 CalculateForce()
+{
+    // Calculate the direction away from the evading entity
+    Vector2 directionAway = transform.position - m_EvadingEntity.transform.position;
+
+    // Normalize the direction vector to get a unit vector
+    directionAway.Normalize();
+
+    // Calculate the distance to the evading entity
+    float distanceToEvadingEntity = Vector2.Distance(transform.position, m_EvadingEntity.transform.position);
+
+    // If within the evade radius, apply a force to move away
+    if (distanceToEvadingEntity <= m_EvadeRadius)
+    {
+        // Scale the force based on distance to create a smoother transition
+        float forceMultiplier = Mathf.Clamp01((m_EvadeRadius - distanceToEvadingEntity) / m_EvadeRadius);
+        return directionAway * forceMultiplier * m_Agent.maxSpeed;
+    }
+    else
+    {
+        // No need to evade if outside the radius
+        return Vector2.zero;
+    }
+}
+
+
+
+---------------------------------------------------------------------------------------- 
+----------------------------------------------------------------------------------------
+
+
+
+arrive
+
+
+public override Vector2 CalculateForce()
+{
+    // Calculate the desired direction towards the target
+    Vector2 desiredDirection = m_TargetPosition - transform.position;
+
+    // Calculate the distance to the target
+    float distanceToTarget = desiredDirection.magnitude;
+
+    // Adjust desired speed based on distance and slowing radius
+    float desiredSpeed = Mathf.Clamp01(distanceToTarget / m_SlowingRadius) * m_Agent.maxSpeed;
+
+    // Normalize the desired direction to get a unit vector
+    desiredDirection.Normalize();
+
+    // Calculate the steering force needed to reach the target at the desired speed
+    Vector2 steeringForce = desiredDirection * desiredSpeed - m_Agent.velocity;
+
+    return steeringForce;
+}
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class SteeringBehaviour_Manager : MonoBehaviour
+{
+    public MovingEntity m_Entity { get; private set; }
+    public float m_MaxForce = 100f;
+    public float m_RemainingForce;
+    public List<SteeringBehaviour> m_SteeringBehaviours;
+
+    private void Awake()
+    {
+        m_Entity = GetComponent<MovingEntity>();
+
+        if (!m_Entity)
+        {
+            Debug.LogError("Steering Behaviours only work on type MovingEntity", this);
+        }
+    }
+
+    public Vector2 GenerateSteeringForce()
+    {
+        m_RemainingForce = m_MaxForce;
+        Vector2 force = Vector2.zero;
+
+        for (int i = 0; i < m_SteeringBehaviours.Count; i++)
+        {
+            if (m_RemainingForce <= 0f)
+            {
+                break;
+            }
+
+            if (!m_SteeringBehaviours[i].m_Active)
+            {
+                continue;
+            }
+
+            Vector2 tempForce = m_SteeringBehaviours[i].CalculateForce();
+
+            // Ensure tempForce doesn't exceed remaining force and prioritize higher weight forces
+            if (tempForce.magnitude > m_RemainingForce)
+            {
+                // Handle forces exceeding remaining force gracefully
+                if (m_SteeringBehaviours[i].m_Weight > 0f)
+                {
+                    // Prioritize higher weight forces if exceeding remaining force
+                    tempForce = tempForce.normalized * m_RemainingForce;
+                    m_RemainingForce = 0f; // Force this behavior to be the last one applied
+                }
+                else
+                {
+                    // Skip lower weight forces exceeding remaining force
+                    continue;
+                }
+            }
+            else
+            {
+                m_RemainingForce -= tempForce.magnitude;
+            }
+
+            force += tempForce;
+        }
+
+        return force;
+    }
+
+    public void EnableExclusive(SteeringBehaviour behaviour)
+    {
+        if (m_SteeringBehaviours.Contains(behaviour))
+        {
+            foreach (SteeringBehaviour sb in m_SteeringBehaviours)
+            {
+                sb.m_Active = false;
+            }
+
+            behaviour.m_Active = true;
+        }
+        else
+        {
+            Debug.Log(behaviour + " does not exist on object", this);
+        }
+    }
+
+    public void DisableAllSteeringBehaviours()
+    {
+        foreach (SteeringBehaviour sb in m_SteeringBehaviours)
+        {
+            sb.m_Active = false;
+        }
+    }
+}
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class SteeringBehaviour_Wander : SteeringBehaviour
+{
+    [Header("Wander Properties")]
+    [Header("Settings")]
+    public float m_WanderRadius = 2f;
+    public float m_WanderOffset = 2f;
+    public float m_WanderRate = 180f; // Degrees per second
+
+    private Vector2 m_CirclePosition;
+    private Vector2 m_PointOnCircle;
+    private float m_Angle = 0f;
+
+    [Space(10)]
+
+    [Header("Debugs")]
+    [SerializeField]
+    protected Color m_Debug_RadiusColour = Color.yellow;
+    [SerializeField]
+    protected Color m_Debug_TargetColour = Color.cyan;
+
+    public override Vector2 CalculateForce()
+    {
+        // Update wander angle based on wander rate and deltaTime
+        m_Angle += m_WanderRate * Time.deltaTime * Mathf.Deg2Rad;
+
+        // Calculate circle center position based on agent's forward direction and offset
+        m_CirclePosition = transform.position + transform.forward * m_WanderOffset;
+
+        // Calculate point on circle using wander radius and angle
+        m_PointOnCircle = m_CirclePosition + new Vector2(Mathf.Sin(m_Angle) * m_WanderRadius, Mathf.Cos(m_Angle) * m_WanderRadius);
+
+        // Seek towards the point on the circle
+        return Seek(m_PointOnCircle);
+    }
+
+    protected override void OnDrawGizmosSelected()
+    {
+        if (Application.isPlaying)
+        {
+            if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
+            {
+                Gizmos.color = m_Debug_RadiusColour;
+                Gizmos.DrawWireSphere(m_CirclePosition, m_WanderRadius);
+
+                Gizmos.color = Color.blue;
+                Gizmos.DrawLine(transform.position, m_CirclePosition);
+
+                Gizmos.color = Color.green;
+                Gizmos.DrawLine(m_CirclePosition, m_PointOnCircle);
+
+                Gizmos.color = m_Debug_TargetColour;
+                Gizmos.DrawSphere(m_PointOnCircle, 0.2f);
+
+                base.OnDrawGizmosSelected();
+            }
+        }
+    }
+}
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+
+collision avoidance 
+
+
+
+
+
+
+
+public override Vector2 CalculateForce()
+{
+    UpdateFeelers();
+
+    Vector2 steeringForce = Vector2.zero;
+    float closestDistance = Mathf.Infinity;
+    RaycastHit2D closestHit = default;
+
+    for (int i = 0; i < m_Feelers.Length; ++i)
+    {
+        Vector2 feelerEnd = transform.position + m_FeelerVectors[i];
+        RaycastHit2D hit = Physics2D.Raycast(transform.position, feelerEnd, m_FeelersLength[i], m_FeelerLayerMask);
+
+        if (hit)
+        {
+            float distance = Vector2.Distance(transform.position, hit.point);
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestHit = hit;
+            }
+        }
+    }
+
+    if (closestHit)
+    {
+        // Calculate steering force to move away from the collision
+        Vector2 avoidanceDirection = transform.position - closestHit.point;
+        avoidanceDirection = avoidanceDirection.normalized;
+        steeringForce = avoidanceDirection * m_Manager.m_Entity.m_MaxSpeed;
+    }
+
+    return steeringForce;
+}
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+Sepretion 
+
+
+public override Vector2 CalculateForce()
+{
+    accumulatedSeperationForce = Vector2.zero;
+
+    // Iterate through neighboring entities within FOV and separation range
+    foreach (MovingEntity neighbor in m_Manager.m_Neighbours)
+    {
+        if (neighbor != m_Manager.m_Entity && IsInFOV(neighbor.transform.position))
+        {
+            Vector2 dirToNeighbor = transform.position - neighbor.transform.position;
+            float distance = dirToNeighbor.magnitude;
+
+            // Check if neighbor is within separation range
+            if (distance < m_SeperationRange)
+            {
+                // Calculate normalized direction and scale force based on distance
+                dirToNeighbor.Normalize();
+                float forceMultiplier = Mathf.Clamp01((m_SeperationRange - distance) / m_SeperationRange);
+                accumulatedSeperationForce += dirToNeighbor * forceMultiplier;
+            }
+        }
+    }
+
+    return accumulatedSeperationForce;
+}
+
+private bool IsInFOV(Vector2 targetPosition)
+{
+    // Calculate direction to target and angle between forward direction and target direction
+    Vector2 dirToTarget = targetPosition - transform.position;
+    float angle = Vector2.Angle(transform.forward, dirToTarget);
+
+    // Check if target is within the specified FOV
+    return Mathf.Abs(angle) <= Mathf.Abs(m_FOV);
+}
+
+
+
+
+
+
+
+Cohension 
+
+
+
+public override Vector2 CalculateForce()
+{
+    Vector2 averageNeighbourPos = Vector2.zero;
+    int neighbourCount = 0;
+
+    // Iterate through neighboring entities within FOV and cohesion range
+    foreach (MovingEntity neighbor in m_Manager.m_Neighbours)
+    {
+        if (neighbor != m_Manager.m_Entity && IsInFOV(neighbor.transform.position))
+        {
+            float distance = Vector2.Distance(transform.position, neighbor.transform.position);
+
+            // Check if neighbor is within cohesion range
+            if (distance < m_CohesionRange)
+            {
+                averageNeighbourPos += neighbor.transform.position;
+                neighbourCount++;
+            }
+        }
+    }
+
+    // Calculate desired direction towards average neighbour position
+    if (neighbourCount > 0)
+    {
+        averageNeighbourPos /= neighbourCount;
+        return (averageNeighbourPos - transform.position).normalized * m_Agent.maxSpeed;
+    }
+    else
+    {
+        return Vector2.zero;
+    }
+}
+
+private bool IsInFOV(Vector2 targetPosition)
+{
+    // Same FOV check as in Separation behaviour
+    Vector2 dirToTarget = targetPosition - transform.position;
+    float angle = Vector2.Angle(transform.forward, dirToTarget);
+    return Mathf.Abs(angle) <= Mathf.Abs(m_FOV);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+//------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------
+
+
+
+
+
