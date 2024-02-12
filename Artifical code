@@ -186,7 +186,6 @@ public override Vector2 CalculateForce()
 
 
 
-
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -195,7 +194,9 @@ public class SteeringBehaviour_Manager : MonoBehaviour
 {
     public MovingEntity m_Entity { get; private set; }
     public float m_MaxForce = 100f;
-    public float m_RemainingForce;
+    [SerializeField]
+    private float m_AvoidanceWeight = 2f;
+    private float m_RemainingForce; // Stores the remaining force available after processing previous behaviors
     public List<SteeringBehaviour> m_SteeringBehaviours;
 
     private void Awake()
@@ -204,7 +205,7 @@ public class SteeringBehaviour_Manager : MonoBehaviour
 
         if (!m_Entity)
         {
-            Debug.LogError("Steering Behaviours only work on type MovingEntity", this);
+            Debug.LogError("Steering Behaviours only working on type moving entity", this);
         }
     }
 
@@ -213,41 +214,37 @@ public class SteeringBehaviour_Manager : MonoBehaviour
         m_RemainingForce = m_MaxForce;
         Vector2 force = Vector2.zero;
 
+        // Process avoidance behaviors first, with lower priority, 
+        // giving higher priority to the remaining behaviors
         for (int i = 0; i < m_SteeringBehaviours.Count; i++)
         {
-            if (m_RemainingForce <= 0f)
-            {
-                break;
-            }
-
-            if (!m_SteeringBehaviours[i].m_Active)
+            if (!m_SteeringBehaviours[i].m_Active || m_RemainingForce <= 0f)
             {
                 continue;
             }
 
+            // Apply avoidance behaviors with lower weight
+            if (m_SteeringBehaviours[i] is SteeringBehaviour_Avoidance)
+            {
+                Vector2 tempForce = m_SteeringBehaviours[i].CalculateForce() * m_AvoidanceWeight;
+
+                // Reduce remaining force only by the used portion of the avoidance weight
+                m_RemainingForce -= Mathf.Min(m_RemainingForce, tempForce.magnitude / m_AvoidanceWeight);
+
+                force += tempForce;
+                continue;
+            }
+
+            // Process other behaviors normally
             Vector2 tempForce = m_SteeringBehaviours[i].CalculateForce();
 
-            // Ensure tempForce doesn't exceed remaining force and prioritize higher weight forces
-            if (tempForce.magnitude > m_RemainingForce)
+            // Truncate if force exceeds remaining or max force
+            if (tempForce.magnitude > m_RemainingForce || tempForce.magnitude > m_MaxForce)
             {
-                // Handle forces exceeding remaining force gracefully
-                if (m_SteeringBehaviours[i].m_Weight > 0f)
-                {
-                    // Prioritize higher weight forces if exceeding remaining force
-                    tempForce = tempForce.normalized * m_RemainingForce;
-                    m_RemainingForce = 0f; // Force this behavior to be the last one applied
-                }
-                else
-                {
-                    // Skip lower weight forces exceeding remaining force
-                    continue;
-                }
-            }
-            else
-            {
-                m_RemainingForce -= tempForce.magnitude;
+                tempForce = Maths.Normalise(tempForce) * Mathf.Min(m_RemainingForce, m_MaxForce);
             }
 
+            m_RemainingForce -= tempForce.magnitude;
             force += tempForce;
         }
 
@@ -267,7 +264,7 @@ public class SteeringBehaviour_Manager : MonoBehaviour
         }
         else
         {
-            Debug.Log(behaviour + " does not exist on object", this);
+            Debug.Log(behaviour + " doesn't exist on object", this);
         }
     }
 
@@ -285,14 +282,9 @@ public class SteeringBehaviour_Manager : MonoBehaviour
 
 
 
+
 ------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
 
 
 
@@ -302,62 +294,73 @@ using UnityEngine;
 
 public class SteeringBehaviour_Wander : SteeringBehaviour
 {
-    [Header("Wander Properties")]
-    [Header("Settings")]
-    public float m_WanderRadius = 2f;
-    public float m_WanderOffset = 2f;
-    public float m_WanderRate = 180f; // Degrees per second
+  [Header("Wander Properties")]
+  [Header("Settings")]
+  public float m_WanderRadius = 2;
+  public float m_WanderOffset = 2;
+  public float m_AngleDisplacement = 2;
 
-    private Vector2 m_CirclePosition;
-    private Vector2 m_PointOnCircle;
-    private float m_Angle = 0f;
+  Vector2 m_CirclePosition;
+  Vector2 m_PointOnCircle;
+  float m_Angle = 0.0f;
 
-    [Space(10)]
+  [Space(10)]
 
-    [Header("Debugs")]
-    [SerializeField]
-    protected Color m_Debug_RadiusColour = Color.yellow;
-    [SerializeField]
-    protected Color m_Debug_TargetColour = Color.cyan;
+  [Header("Debugs")]
+  [SerializeField]
+  protected Color m_Debug_RadiusColour = Color.yellow;
+  [SerializeField]
+  protected Color m_Debug_TargetColour = Color.cyan;
 
-    public override Vector2 CalculateForce()
+  public override Vector2 CalculateForce()
+  {
+    // 1. Calculate a turning angle. The m_Angle value starts at 0 and each frame you
+    // should add or take away m_Angle Displacement. This will give you a current
+    // turning angle.
+    m_Angle += Random.Range(-m_AngleDisplacement, m_AngleDisplacement);
+
+    // 2. Create a point in front of the agent. m_Wander Offset should be the distance
+    // of this point from the agent.
+    m_CirclePosition = transform.position + transform.up * m_WanderOffset;
+
+    // 3. Calculate a point on a circle with the radius of m_WanderRadius.
+    float angleRad = Mathf.Deg2Rad * m_Angle;
+    m_PointOnCircle = m_CirclePosition + new Vector2(Mathf.Sin(angleRad), Mathf.Cos(angleRad)) * m_WanderRadius;
+
+    // 4. Seek to m_PointOnCircle
+    m_DesiredVelocity = m_PointOnCircle - (Vector2)transform.position;
+    m_DesiredVelocity = Maths.Normalise(m_DesiredVelocity) * m_Manager.m_Entity.m_MaxSpeed;
+
+    // 5. Calculate the steering force
+    m_Steering = m_DesiredVelocity - m_Manager.m_Entity.m_Velocity;
+
+    return m_Steering * m_Weight;
+  }
+
+  protected override void OnDrawGizmosSelected()
+  {
+    if (Application.isPlaying)
     {
-        // Update wander angle based on wander rate and deltaTime
-        m_Angle += m_WanderRate * Time.deltaTime * Mathf.Deg2Rad;
+      if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
+      {
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(m_CirclePosition, m_WanderRadius);
 
-        // Calculate circle center position based on agent's forward direction and offset
-        m_CirclePosition = transform.position + transform.forward * m_WanderOffset;
+        Gizmos.color = Color.blue;
+        Gizmos.DrawLine(transform.position, m_CirclePosition);
 
-        // Calculate point on circle using wander radius and angle
-        m_PointOnCircle = m_CirclePosition + new Vector2(Mathf.Sin(m_Angle) * m_WanderRadius, Mathf.Cos(m_Angle) * m_WanderRadius);
+        Gizmos.color = Color.green;
+        Gizmos.DrawLine(m_CirclePosition, m_PointOnCircle);
 
-        // Seek towards the point on the circle
-        return Seek(m_PointOnCircle);
+        Gizmos.color = Color.red;
+        Gizmos.DrawLine(transform.position, m_PointOnCircle);
+
+        base.OnDrawGizmosSelected();
+      }
     }
-
-    protected override void OnDrawGizmosSelected()
-    {
-        if (Application.isPlaying)
-        {
-            if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
-            {
-                Gizmos.color = m_Debug_RadiusColour;
-                Gizmos.DrawWireSphere(m_CirclePosition, m_WanderRadius);
-
-                Gizmos.color = Color.blue;
-                Gizmos.DrawLine(transform.position, m_CirclePosition);
-
-                Gizmos.color = Color.green;
-                Gizmos.DrawLine(m_CirclePosition, m_PointOnCircle);
-
-                Gizmos.color = m_Debug_TargetColour;
-                Gizmos.DrawSphere(m_PointOnCircle, 0.2f);
-
-                base.OnDrawGizmosSelected();
-            }
-        }
-    }
+  }
 }
+
 
 
 
@@ -372,45 +375,170 @@ public class SteeringBehaviour_Wander : SteeringBehaviour
 collision avoidance 
 
 
-
-
-
-
-
 public override Vector2 CalculateForce()
 {
+    Vector2 steering = Vector2.zero;
+    Vector2 desiredVelocity = Vector2.zero;
+
     UpdateFeelers();
 
-    Vector2 steeringForce = Vector2.zero;
-    float closestDistance = Mathf.Infinity;
-    RaycastHit2D closestHit = default;
+    float shortestDistance = Mathf.Infinity;
+    Vector2 closestHitPoint = Vector2.zero;
 
     for (int i = 0; i < m_Feelers.Length; ++i)
     {
-        Vector2 feelerEnd = transform.position + m_FeelerVectors[i];
-        RaycastHit2D hit = Physics2D.Raycast(transform.position, feelerEnd, m_FeelersLength[i], m_FeelerLayerMask);
-
-        if (hit)
+        RaycastHit2D tempHit = Physics2D.Raycast(transform.position, m_FeelerVectors[i], m_FeelersLength[i], m_FeelerLayerMask.value);
+        if (tempHit.collider != null)
         {
-            float distance = Vector2.Distance(transform.position, hit.point);
-            if (distance < closestDistance)
+            float distance = Vector2.Distance(transform.position, tempHit.point);
+            if (distance < shortestDistance)
             {
-                closestDistance = distance;
-                closestHit = hit;
+                shortestDistance = distance;
+                closestHitPoint = tempHit.point;
             }
         }
     }
 
-    if (closestHit)
+    if (shortestDistance < Mathf.Infinity)
     {
-        // Calculate steering force to move away from the collision
-        Vector2 avoidanceDirection = transform.position - closestHit.point;
-        avoidanceDirection = avoidanceDirection.normalized;
-        steeringForce = avoidanceDirection * m_Manager.m_Entity.m_MaxSpeed;
+        desiredVelocity = transform.position - (Vector3)closestHitPoint;
+        desiredVelocity = desiredVelocity.normalized * m_Manager.m_Entity.m_MaxSpeed;
+        steering = desiredVelocity - m_Manager.m_Entity.m_Velocity;
     }
 
-    return steeringForce;
+    return steering;
 }
+
+
+
+
+
+
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Tilemaps;
+
+public class SteeringBehaviour_CollisionAvoidance : SteeringBehaviour
+{
+    [System.Serializable]
+    public struct Feeler
+    {
+        [Range(0, 360)]
+        public float Angle; // Angle offset from forward direction
+        public float MaxLength;
+        public Color DebugColor; 
+    }
+
+    [SerializeField]
+    private Feeler[] Feelers;
+
+    [SerializeField]
+    private LayerMask ObstacleLayerMask; 
+
+    // Cached references for efficiency
+    private MovingEntity Entity { get; }     
+    private RaycastHit2D[] RaycastResults { get; }  
+
+    public SteeringBehaviour_CollisionAvoidance()
+    {
+        RaycastResults = new RaycastHit2D[Feelers.Length];
+    }
+
+    private void Awake()
+    {
+        Entity = GetComponent<MovingEntity>();
+
+        if (Entity == null)
+        {
+            Debug.LogError("SteeringBehaviour_CollisionAvoidance requires a MovingEntity component.", this);
+        }
+    }
+
+    public override Vector2 CalculateForce()
+    {
+        Steering = Vector2.zero;
+        DesiredVelocity = Vector2.zero;
+
+        UpdateFeelers();
+
+        RaycastHit2D closestCollision = FindClosestCollision();
+
+        if (closestCollision.collider != null)
+        {
+            ApplyFleeForce(closestCollision.point);
+        }
+
+        return Steering;
+    }
+
+    private void UpdateFeelers()
+    {
+        for (int i = 0; i < Feelers.Length; ++i)
+        {
+            float length = Mathf.Lerp(1f, Feelers[i].MaxLength, Entity.Velocity.magnitude / Entity.MaxSpeed);
+            Vector2 direction = Maths.RotateVector(Entity.Velocity.normalized, Feelers[i].Angle);
+
+            RaycastResults[i].point = (Vector2)transform.position + direction * length; 
+        }
+    }
+
+    private RaycastHit2D FindClosestCollision()
+    {
+        float closestDistance = float.MaxValue;
+        int closestIndex = -1;
+
+        for (int i = 0; i < Feelers.Length; ++i)
+        {
+            // Skip expensive raycast if previous result is still valid
+            if (RaycastResults[i].collider == null && Physics2D.Raycast(transform.position, RaycastResults[i].point - transform.position, RaycastResults[i].point.magnitude, ObstacleLayerMask))
+            {
+                RaycastResults[i].collider = null; // Invalidate if no longer hitting
+            } 
+
+            // Update closest collision if applicable
+            if (RaycastResults[i].collider != null && RaycastResults[i].distance < closestDistance)
+            {
+                closestDistance = RaycastResults[i].distance;
+                closestIndex = i;
+            }
+        }
+
+        return closestIndex != -1 ? RaycastResults[closestIndex] : new RaycastHit2D(); 
+    }
+
+    private void ApplyFleeForce(Vector2 collisionPoint)
+    {
+        Vector2 fleeDirection = (transform.position - collisionPoint).normalized;
+
+        // Option for distance weighting:
+        // float distanceFactor = Mathf.Clamp01(Vector2.Distance(transform.position, collisionPoint) / Feelers[0].MaxLength);
+        // DesiredVelocity = fleeDirection * Entity.MaxSpeed * distanceFactor;
+
+        DesiredVelocity = fleeDirection * Entity.MaxSpeed;
+        Steering = Maths.MinMagnitude(DesiredVelocity - Entity.Velocity,  Manager.RemainingForce, Manager.MaxForce); 
+    }
+
+    protected override void OnDrawGizmosSelected()
+    {
+        if (Application.isPlaying && DebugShowDebugLines && Active && Manager.Entity)
+        {
+            for (int i = 0; i < Feelers.Length; ++i)
+            {
+                Gizmos.color = Feelers[i].DebugColor;
+                Gizmos.DrawLine(transform.position, RaycastResults[i].point);
+            }
+
+            base.OnDrawGizmosSelected();
+        }
+    }
+}
+
+
+
 
 
 
@@ -522,6 +650,8 @@ private bool IsInFOV(Vector2 targetPosition)
 
 ------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------
+
+
 
 
 
