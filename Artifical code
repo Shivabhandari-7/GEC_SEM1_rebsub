@@ -1,878 +1,309 @@
-using System.Collections;
 using System.Collections.Generic;
-using Unity.VisualScripting;
+using System.Linq;
 using UnityEngine;
 
-public class SteeringBehaviour_Flee : SteeringBehaviour
+public abstract class PathFinding
 {
-  [Header("Flee Properties")]
-  [Header("Settings")]
-  public Transform m_FleeTarget;
-  public float m_FleeRadius;
+    protected GridNode[] m_GridNodes;
 
-  [Space(10)]
+    protected bool m_AllowDiagonal;
+    protected bool m_CanCutCorners;
+    protected int m_MaxPathCount = 10000;
+    public List<Vector2> m_Path { get; protected set; }
 
-  [Header("Debugs")]
-  [SerializeField]
-  protected Color m_Debug_RadiusColour = Color.yellow;
-
-  public override Vector2 CalculateForce()
-  {
-    // Check if a flee target is assigned
-    if (m_FleeTarget == null)
-    {
-      return Vector2.zero;
-    }
-
-    // Calculate the distance to the flee target
-    Vector2 direction = m_FleeTarget.position - transform.position;
-    float distance = direction.magnitude;
-
-    // Check if the target is within the flee radius
-    if (distance > m_FleeRadius)
-    {
-      return Vector2.zero;
-    }
-
-    // Calculate the desired flee velocity 
-    Vector2 desiredVelocity = direction * -1.0f;
-    desiredVelocity.Normalize();
-
-    // Scale the desired velocity by the flee weight
-    desiredVelocity *= m_Weight;
-
-    // Calculate the fleeing steering force
-    Vector2 force = desiredVelocity - m_Velocity;
-    force *= m_MaxForce;
-
-    // Limit the force
-    force = Vector2.ClampMagnitude(force, m_MaxForce);
-
-    return force;
-  }
-
-  protected override void OnDrawGizmosSelected()
-  {
-    if (Application.isPlaying)
-    {
-      if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
-      {
-        Gizmos.color = m_Debug_RadiusColour;
-        Gizmos.DrawWireSphere(transform.position, m_FleeRadius);
-
-        base.OnDrawGizmosSelected();
-      }
-    }
-  }
-}
-
-
-
-
-
-
-
-
-
-
----------------------------------------------------------------------------------------- 
-----------------------------------------------------------------------------------------
-
-
-
-
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
-public class SteeringBehaviour_Pursuit : SteeringBehaviour
-{
-    [Header("Pursuit Properties")]
-    public MovingEntity m_PursuingEntity;
-
-    public override Vector2 CalculateForce()
+    public PathFinding(bool allowDiagonal, bool cutCorners)
     {
-        if (!m_Active || !m_PursuingEntity)
-            return Vector2.zero;
-
-        Vector2 toTarget = m_PursuingEntity.transform.position - transform.position;
-        float distance = toTarget.magnitude;
-
-        float predictionTime = distance / (m_Manager.m_Entity.m_MaxSpeed + m_PursuingEntity.m_MaxSpeed);
-
-        Vector2 targetPos = m_PursuingEntity.transform.position + (m_PursuingEntity.m_Velocity * predictionTime);
-
-        return (targetPos - (Vector2)transform.position).normalized * m_Manager.m_Entity.m_MaxSpeed;
-    }
-}
-
-
-
-
-
-
-
-
-
- public override Vector2 CalculateForce()
-    {
-        if (!m_PursuingEntity)  // Safety check
-            return Vector2.zero;  
-
-        // 1. Distance to pursued entity
-        Vector2 distanceToTarget = m_PursuingEntity.transform.position - transform.position;
-
-        // 2. Combined speed
-        float combinedSpeed = m_Manager.m_Entity.m_MaxSpeed + m_PursuingEntity.m_MaxSpeed;
-
-        // 3. Prediction time
-        float predictionTime = distanceToTarget.magnitude / combinedSpeed;
-
-        // 4. Seek with prediction
-        Vector2 predictedTargetPosition = m_PursuingEntity.transform.position + 
-                                          m_PursuingEntity.m_Velocity * predictionTime;
-
-        Vector2 desiredVelocity = (predictedTargetPosition - transform.position).normalized * m_Manager.m_Entity.m_MaxSpeed;
-
-        return desiredVelocity - m_Manager.m_Entity.m_Velocity;  // Steering force
+        m_Path = new List<Vector2>();
+        m_AllowDiagonal = allowDiagonal;
+        m_CanCutCorners = cutCorners;
+        m_GridNodes = Grid.GridNodes;
     }
 
+    public abstract void GeneratePath(GridNode start, GridNode end);
 
-
-
-
-
-
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
-public class SteeringBehaviour_Pursuit : SteeringBehaviour
-{
-    [Header("Pursuit Properties")]
-    [Header("Settings")]
-    public MovingEntity m_PursuingEntity;
-
-    public override Vector2 CalculateForce()
+    public Vector2 GetClosestPointOnPath(Vector2 position)
     {
-        Vector2 force = Vector2.zero;
+        float distance = float.MaxValue;
+        int closestPoint = int.MaxValue;
 
-        if (m_PursuingEntity != null)
+        for (int i = 0; i < m_Path.Count; ++i)
         {
-            // Calculate distance between AI Agent and Pursuing Entity
-            Vector2 distanceVector = m_PursuingEntity.transform.position - transform.position;
-            
-            // Calculate combined speed
-            float combinedSpeed = m_Manager.m_Entity.m_MaxSpeed + m_PursuingEntity.m_Velocity.magnitude;
-
-            // Calculate prediction time
-            float predictionTime = distanceVector.magnitude / combinedSpeed;
-
-            // Calculate new seek target
-            Vector2 seekTarget = m_PursuingEntity.transform.position + m_PursuingEntity.m_Velocity * predictionTime;
-
-            // Perform seek behavior towards the new target
-            force = (seekTarget - (Vector2)m_Manager.m_Entity.transform.position).normalized * m_Weight;
+            float tempDistance = Maths.Magnitude(m_Path[i] - position);
+            if (tempDistance < distance)
+            {
+                closestPoint = i;
+                distance = tempDistance;
+            }
         }
 
-        return force;
+        for (int j = 0; j < closestPoint - 1; ++j)
+        {
+            m_Path.RemoveAt(0);
+        }
+
+        return m_Path[0];
+    }
+
+    public Vector2 GetNextPointOnPath(Vector2 position)
+    {
+        Vector2 pos = position;
+        if (m_Path.Count > 0)
+        {
+            m_Path.RemoveAt(0);
+
+            if (m_Path.Count > 0)
+                pos = m_Path[0];
+        }
+
+        return pos;
+    }
+
+    protected float Heuristic_Manhattan(GridNode start, GridNode end)
+    {
+        float dx = Mathf.Abs(start.transform.position.x - end.transform.position.x);
+        float dy = Mathf.Abs(start.transform.position.y - end.transform.position.y);
+        return dx + dy;
+    }
+
+    protected float Heuristic_Euclidean(GridNode start, GridNode end)
+    {
+        float dx = Mathf.Abs(start.transform.position.x - end.transform.position.x);
+        float dy = Mathf.Abs(start.transform.position.y - end.transform.position.y);
+        return Mathf.Sqrt(dx * dx + dy * dy);
+    }
+
+    protected float Heuristic_Octile(GridNode start, GridNode end)
+    {
+        float dx = Mathf.Abs(start.transform.position.x - end.transform.position.x);
+        float dy = Mathf.Abs(start.transform.position.y - end.transform.position.y);
+        return Mathf.Max(dx, dy) + (Mathf.Sqrt(2) - 1) * Mathf.Min(dx, dy);
+    }
+
+    public float Heuristic_Chebyshev(GridNode start, GridNode end)
+    {
+        float dx = Mathf.Abs(start.transform.position.x - end.transform.position.x);
+        float dy = Mathf.Abs(start.transform.position.y - end.transform.position.y);
+        return Mathf.Max(dx, dy);
     }
 }
 
-
-
-
-
-
-
----------------------------------------------------------------------------------------- 
-----------------------------------------------------------------------------------------
-
-
-
-
-"Evade"
-
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
-public class SteeringBehaviour_Evade : SteeringBehaviour
+[System.Serializable]
+public class Pathfinding_AStar : PathFinding
 {
-    [Header("Evade Properties")]
-    [Header("Settings")]
-    public MovingEntity m_EvadingEntity;
-    public float m_EvadeRadius;
+    [System.Serializable]
+    class NodeInformation
+    {
+        public GridNode node;
+        public NodeInformation parent;
+        public float gCost;
+        public float hCost;
+        public float fCost;
 
-    [Space(10)]
+        public NodeInformation(GridNode node, NodeInformation parent, float gCost, float hCost)
+        {
+            this.node = node;
+            this.parent = parent;
+            this.gCost = gCost;
+            this.hCost = hCost;
+            fCost = gCost + hCost;
+        }
 
-    [Header("Debugs")]
+        public void UpdateNodeInformation(NodeInformation parent, float gCost, float hCost)
+        {
+            this.parent = parent;
+            this.gCost = gCost;
+            this.hCost = hCost;
+            fCost = gCost + hCost;
+        }
+    }
+
+    public Pathfinding_AStar(bool allowDiagonal, bool cutCorners) : base(allowDiagonal, cutCorners) { }
+
+    public override void GeneratePath(GridNode start, GridNode end)
+    {
+        m_Path.Clear();
+
+        List<NodeInformation> openList = new List<NodeInformation>();
+        List<NodeInformation> closedList = new List<NodeInformation>();
+
+        NodeInformation startingNode = new NodeInformation(start, null, 0, Heuristic_Manhattan(start, end));
+        openList.Add(startingNode);
+
+        NodeInformation current = startingNode;
+
+        int maxIteration = 0;
+
+        while (current != null)
+        {
+            maxIteration++;
+            if (maxIteration > m_MaxPathCount)
+            {
+                Debug.LogError("Max Iteration Reached");
+                break;
+            }
+
+            if (current.node == end)
+            {
+                SetPath(current);
+                return;
+            }
+
+            for (int i = 0; i < 8; ++i)
+            {
+                GridNode neighbor = current.node.Neighbours[i];
+
+                if (neighbor == null || DoesListContainNode(closedList, neighbor) || !neighbor.m_Walkable)
+                    continue;
+
+                float distance = Vector2.Distance(current.node.transform.position, neighbor.transform.position);
+                float newCostToNeighbor = current.gCost + neighbor.m_Cost + distance;
+
+                NodeInformation neighborInfo = GetNodeInformationFromList(openList, neighbor);
+                if (neighborInfo != null && newCostToNeighbor < neighborInfo.gCost)
+                {
+                    neighborInfo.UpdateNodeInformation(current, newCostToNeighbor, Heuristic_Manhattan(neighbor, end));
+                }
+                else if (neighborInfo == null)
+                {
+                    neighborInfo = new NodeInformation(neighbor, current, newCostToNeighbor, Heuristic_Manhattan(neighbor, end));
+                    openList.Add(neighborInfo);
+                }
+            }
+
+            openList.Remove(current);
+            closedList.Add(current);
+
+            current = GetCheapestNode(openList);
+        }
+
+        Debug.LogError("No path found, start pos = " + start.transform.position + " - end pos = " + end.transform.position);
+    }
+
+    private void SetPath(NodeInformation end)
+    {
+        List<Vector2> reversePath = new List<Vector2>();
+
+        NodeInformation curNode = end;
+
+        while (curNode != null)
+        {
+            reversePath.Add(curNode.node.transform.position);
+            curNode = curNode.parent;
+        }
+
+        reversePath.Reverse();
+        m_Path = reversePath;
+    }
+
+    private NodeInformation GetCheapestNode(List<NodeInformation> nodes)
+    {
+        return nodes.OrderBy(n => n.fCost).First();
+    }
+
+    private bool DoesListContainNode(List<NodeInformation> nodeInformation, GridNode gridNode)
+    {
+        return nodeInformation.Any(x => x.node == gridNode);
+    }
+
+    private NodeInformation GetNodeInformationFromList(List<NodeInformation> nodeInformation, GridNode gridNode)
+    {
+        return nodeInformation.Find(x => x.node == gridNode);
+    }
+
+    private void DrawPath(List<NodeInformation> open, List<NodeInformation> closed)
+    {
+        if (m_Debug_ChangeTileColours)
+        {
+            Grid.ResetGridNodeColours();
+
+            foreach (NodeInformation node in closed)
+            {
+                node.node.SetOpenInPathFinding();
+            }
+
+            foreach (NodeInformation node in open)
+            {
+                node.node.SetClosedInPathFinding();
+            }
+        }
+    }
+}
+
+public class Task11_AStarPathfinding : MovingEntity
+{
+    SteeringBehaviour_Manager m_SteeringBehaviours;
+    SteeringBehaviour_Seek m_Seek;
+
     [SerializeField]
-    protected Color m_Debug_RadiusColour = Color.yellow;
+    Pathfinding_AStar m_AStar;
 
-    public override Vector2 CalculateForce()
-    {
-        Vector2 force = Vector2.zero;
-
-        if (m_EvadingEntity != null)
-        {
-            // Calculate distance between AI Agent and Evading Entity
-            Vector2 distanceVector = m_EvadingEntity.transform.position - transform.position;
-
-            // Check if the Evading Entity is within the evade radius
-            if (distanceVector.magnitude < m_EvadeRadius)
-            {
-                // Calculate prediction time
-                float predictionTime = distanceVector.magnitude / m_Manager.m_Entity.m_MaxSpeed;
-
-                // Calculate future position of the Evading Entity
-                Vector2 futurePosition = m_EvadingEntity.transform.position + m_EvadingEntity.m_Velocity * predictionTime;
-
-                // Perform flee behavior from the future position
-                force = (transform.position - futurePosition).normalized * m_Weight;
-            }
-        }
-
-        return force;
-    }
-
-    protected override void OnDrawGizmosSelected()
-    {
-        if (Application.isPlaying)
-        {
-            if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
-            {
-                Gizmos.color = m_Debug_RadiusColour;
-                Gizmos.DrawWireSphere(transform.position, m_EvadeRadius);
-
-                base.OnDrawGizmosSelected();
-            }
-        }
-    }
-}
-
-
-User
-• Evade, much like Pursuit is the improved version of its base
-version, in this case Flee. Evade will attempt to avoid its target
-by using its current velocity.
-• Using your knowledge of Flee and Pursuit attempt to solve
-Evade.
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
-public class SteeringBehaviour_Evade : SteeringBehaviour
-{
-    [Header("Evade Properties")]
-    [Header("Settings")]
-    public MovingEntity m_EvadingEntity;
-    public float m_EvadeRadius;
-
-    [Space(10)]
-
-    [Header("Debugs")]
+    [Header("Debug")]
+    [Tooltip("Draws the path of the agent")]
     [SerializeField]
-    protected Color m_Debug_RadiusColour = Color.yellow;
+    bool m_Debug_DrawPath;
 
-    public override Vector2 CalculateForce()
+    protected override void Awake()
     {
-        //delete me
-        return Vector2.zero;
+        base.Awake();
+
+        m_SteeringBehaviours = GetComponent<SteeringBehaviour_Manager>();
+
+        if (!m_SteeringBehaviours)
+            Debug.LogError("Object doesn't have a Steering Behaviour Manager attached", this);
+
+        m_Seek = GetComponent<SteeringBehaviour_Seek>();
+
+        if (!m_Seek)
+            Debug.LogError("Object doesn't have a Seek Steering Behaviour attached", this);
+
+        m_AStar = new Pathfinding_AStar(true, false);
     }
 
-    protected override void OnDrawGizmosSelected()
+    protected override Vector2 GenerateVelocity()
     {
-        if (Application.isPlaying)
+        return m_SteeringBehaviours.GenerateSteeringForce();
+    }
+
+    protected void Update()
+    {
+        if (m_AStar.m_Path.Count == 0)
         {
-            if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
-            {
-                Gizmos.color = m_Debug_RadiusColour;
-                Gizmos.DrawWireSphere(transform.position, m_EvadeRadius);
+            Rect size = Grid.m_GridSize;
+            float x1 = Random.Range(size.xMin, size.xMax);
+            float y1 = Random.Range(size.yMin, size.yMax);
 
-                base.OnDrawGizmosSelected();
-            }
-        }
-    }
-}
-
-
-
-
-
-
-
-
-    public override Vector2 CalculateForce()
-    {
-        if (!m_EvadingEntity) // Safety check
-            return Vector2.zero;  
-
-        // 1. Distance to evading entity
-        Vector2 distanceToTarget = m_EvadingEntity.transform.position - transform.position;
-
-        // 2. Check if within evade radius
-        if (distanceToTarget.magnitude > m_EvadeRadius)
-            return Vector2.zero; // Outside the threat zone, no need to evade
-
-        // 3. Combined speed
-        float combinedSpeed = m_Manager.m_Entity.m_MaxSpeed + m_EvadingEntity.m_MaxSpeed;
-
-        // 4. Prediction time
-        float predictionTime = distanceToTarget.magnitude / combinedSpeed;
-
-        // 5. Predicted Position of Threat
-        Vector2 predictedTargetPosition = m_EvadingEntity.transform.position + 
-                                          m_EvadingEntity.m_Velocity * predictionTime;
-
-        // 6. Flee from Predicted Position
-        Vector2 desiredVelocity = (transform.position - predictedTargetPosition).normalized * 
-                                   m_Manager.m_Entity.m_MaxSpeed;
-
-        return desiredVelocity - m_Manager.m_Entity.m_Velocity; // Steering force 
-    }
-}
-
-
-
-
-
-
----------------------------------------------------------------------------------------- 
-----------------------------------------------------------------------------------------
-
-
-
-arrive
-
-
-public override Vector2 CalculateForce()
-{
-    // Calculate the desired direction towards the target
-    Vector2 desiredDirection = m_TargetPosition - transform.position;
-
-    // Calculate the distance to the target
-    float distanceToTarget = desiredDirection.magnitude;
-
-    // Adjust desired speed based on distance and slowing radius
-    float desiredSpeed = Mathf.Clamp01(distanceToTarget / m_SlowingRadius) * m_Agent.maxSpeed;
-
-    // Normalize the desired direction to get a unit vector
-    desiredDirection.Normalize();
-
-    // Calculate the steering force needed to reach the target at the desired speed
-    Vector2 steeringForce = desiredDirection * desiredSpeed - m_Agent.velocity;
-
-    return steeringForce;
-}
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
-public class SteeringBehaviour_Manager : MonoBehaviour
-{
-    public MovingEntity m_Entity { get; private set; }
-    public float m_MaxForce = 100f;
-    [SerializeField]
-    private float m_AvoidanceWeight = 2f;
-    private float m_RemainingForce; // Stores the remaining force available after processing previous behaviors
-    public List<SteeringBehaviour> m_SteeringBehaviours;
-
-    private void Awake()
-    {
-        m_Entity = GetComponent<MovingEntity>();
-
-        if (!m_Entity)
-        {
-            Debug.LogError("Steering Behaviours only working on type moving entity", this);
-        }
-    }
-
-    public Vector2 GenerateSteeringForce()
-    {
-        m_RemainingForce = m_MaxForce;
-        Vector2 force = Vector2.zero;
-
-        // Process avoidance behaviors first, with lower priority, 
-        // giving higher priority to the remaining behaviors
-        for (int i = 0; i < m_SteeringBehaviours.Count; i++)
-        {
-            if (!m_SteeringBehaviours[i].m_Active || m_RemainingForce <= 0f)
-            {
-                continue;
-            }
-
-            // Apply avoidance behaviors with lower weight
-            if (m_SteeringBehaviours[i] is SteeringBehaviour_Avoidance)
-            {
-                Vector2 tempForce = m_SteeringBehaviours[i].CalculateForce() * m_AvoidanceWeight;
-
-                // Reduce remaining force only by the used portion of the avoidance weight
-                m_RemainingForce -= Mathf.Min(m_RemainingForce, tempForce.magnitude / m_AvoidanceWeight);
-
-                force += tempForce;
-                continue;
-            }
-
-            // Process other behaviors normally
-            Vector2 tempForce = m_SteeringBehaviours[i].CalculateForce();
-
-            // Truncate if force exceeds remaining or max force
-            if (tempForce.magnitude > m_RemainingForce || tempForce.magnitude > m_MaxForce)
-            {
-                tempForce = Maths.Normalise(tempForce) * Mathf.Min(m_RemainingForce, m_MaxForce);
-            }
-
-            m_RemainingForce -= tempForce.magnitude;
-            force += tempForce;
-        }
-
-        return force;
-    }
-
-    public void EnableExclusive(SteeringBehaviour behaviour)
-    {
-        if (m_SteeringBehaviours.Contains(behaviour))
-        {
-            foreach (SteeringBehaviour sb in m_SteeringBehaviours)
-            {
-                sb.m_Active = false;
-            }
-
-            behaviour.m_Active = true;
+            m_AStar.GeneratePath(Grid.GetNodeClosestWalkableToLocation(transform.position), Grid.GetNodeClosestWalkableToLocation(new Vector2(x1, y1)));
         }
         else
         {
-            Debug.Log(behaviour + " doesn't exist on object", this);
-        }
-    }
-
-    public void DisableAllSteeringBehaviours()
-    {
-        foreach (SteeringBehaviour sb in m_SteeringBehaviours)
-        {
-            sb.m_Active = false;
-        }
-    }
-}
-
-
-
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-
-public class SteeringBehaviour_Wander : SteeringBehaviour
-{
-  [Header("Wander Properties")]
-  [Header("Settings")]
-  public float m_WanderRadius = 2;
-  public float m_WanderOffset = 2;
-  public float m_AngleDisplacement = 2;
-
-  Vector2 m_CirclePosition;
-  Vector2 m_PointOnCircle;
-  float m_Angle = 0.0f;
-
-  [Space(10)]
-
-  [Header("Debugs")]
-  [SerializeField]
-  protected Color m_Debug_RadiusColour = Color.yellow;
-  [SerializeField]
-  protected Color m_Debug_TargetColour = Color.cyan;
-
-  public override Vector2 CalculateForce()
-  {
-    // 1. Calculate a turning angle. The m_Angle value starts at 0 and each frame you
-    // should add or take away m_Angle Displacement. This will give you a current
-    // turning angle.
-    m_Angle += Random.Range(-m_AngleDisplacement, m_AngleDisplacement);
-
-    // 2. Create a point in front of the agent. m_Wander Offset should be the distance
-    // of this point from the agent.
-    m_CirclePosition = transform.position + transform.up * m_WanderOffset;
-
-    // 3. Calculate a point on a circle with the radius of m_WanderRadius.
-    float angleRad = Mathf.Deg2Rad * m_Angle;
-    m_PointOnCircle = m_CirclePosition + new Vector2(Mathf.Sin(angleRad), Mathf.Cos(angleRad)) * m_WanderRadius;
-
-    // 4. Seek to m_PointOnCircle
-    m_DesiredVelocity = m_PointOnCircle - (Vector2)transform.position;
-    m_DesiredVelocity = Maths.Normalise(m_DesiredVelocity) * m_Manager.m_Entity.m_MaxSpeed;
-
-    // 5. Calculate the steering force
-    m_Steering = m_DesiredVelocity - m_Manager.m_Entity.m_Velocity;
-
-    return m_Steering * m_Weight;
-  }
-
-  protected override void OnDrawGizmosSelected()
-  {
-    if (Application.isPlaying)
-    {
-      if (m_Debug_ShowDebugLines && m_Active && m_Manager.m_Entity)
-      {
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(m_CirclePosition, m_WanderRadius);
-
-        Gizmos.color = Color.blue;
-        Gizmos.DrawLine(transform.position, m_CirclePosition);
-
-        Gizmos.color = Color.green;
-        Gizmos.DrawLine(m_CirclePosition, m_PointOnCircle);
-
-        Gizmos.color = Color.red;
-        Gizmos.DrawLine(transform.position, m_PointOnCircle);
-
-        base.OnDrawGizmosSelected();
-      }
-    }
-  }
-}
-
-
-
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-
-collision avoidance 
-
-
-public override Vector2 CalculateForce()
-{
-    Vector2 steering = Vector2.zero;
-    Vector2 desiredVelocity = Vector2.zero;
-
-    UpdateFeelers();
-
-    float shortestDistance = Mathf.Infinity;
-    Vector2 closestHitPoint = Vector2.zero;
-
-    for (int i = 0; i < m_Feelers.Length; ++i)
-    {
-        RaycastHit2D tempHit = Physics2D.Raycast(transform.position, m_FeelerVectors[i], m_FeelersLength[i], m_FeelerLayerMask.value);
-        if (tempHit.collider != null)
-        {
-            float distance = Vector2.Distance(transform.position, tempHit.point);
-            if (distance < shortestDistance)
+            if (m_AStar.m_Path.Count > 0)
             {
-                shortestDistance = distance;
-                closestHitPoint = tempHit.point;
+                Vector2 closestPoint = m_AStar.GetClosestPointOnPath(transform.position);
+
+                if (Maths.Magnitude(closestPoint - (Vector2)transform.position) < 0.5f)
+                    closestPoint = m_AStar.GetNextPointOnPath(transform.position);
+
+                m_Seek.m_TargetPosition = closestPoint;
             }
         }
     }
 
-    if (shortestDistance < Mathf.Infinity)
+    void OnDrawGizmosSelected()
     {
-        desiredVelocity = transform.position - (Vector3)closestHitPoint;
-        desiredVelocity = desiredVelocity.normalized * m_Manager.m_Entity.m_MaxSpeed;
-        steering = desiredVelocity - m_Manager.m_Entity.m_Velocity;
-    }
-
-    return steering;
-}
-
-
-
-
-
-
-
-
-
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using UnityEngine.Tilemaps;
-
-public class SteeringBehaviour_CollisionAvoidance : SteeringBehaviour
-{
-    [System.Serializable]
-    public struct Feeler
-    {
-        [Range(0, 360)]
-        public float Angle; // Angle offset from forward direction
-        public float MaxLength;
-        public Color DebugColor; 
-    }
-
-    [SerializeField]
-    private Feeler[] Feelers;
-
-    [SerializeField]
-    private LayerMask ObstacleLayerMask; 
-
-    // Cached references for efficiency
-    private MovingEntity Entity { get; }     
-    private RaycastHit2D[] RaycastResults { get; }  
-
-    public SteeringBehaviour_CollisionAvoidance()
-    {
-        RaycastResults = new RaycastHit2D[Feelers.Length];
-    }
-
-    private void Awake()
-    {
-        Entity = GetComponent<MovingEntity>();
-
-        if (Entity == null)
+        if (Application.isPlaying)
         {
-            Debug.LogError("SteeringBehaviour_CollisionAvoidance requires a MovingEntity component.", this);
-        }
-    }
-
-    public override Vector2 CalculateForce()
-    {
-        Steering = Vector2.zero;
-        DesiredVelocity = Vector2.zero;
-
-        UpdateFeelers();
-
-        RaycastHit2D closestCollision = FindClosestCollision();
-
-        if (closestCollision.collider != null)
-        {
-            ApplyFleeForce(closestCollision.point);
-        }
-
-        return Steering;
-    }
-
-    private void UpdateFeelers()
-    {
-        for (int i = 0; i < Feelers.Length; ++i)
-        {
-            float length = Mathf.Lerp(1f, Feelers[i].MaxLength, Entity.Velocity.magnitude / Entity.MaxSpeed);
-            Vector2 direction = Maths.RotateVector(Entity.Velocity.normalized, Feelers[i].Angle);
-
-            RaycastResults[i].point = (Vector2)transform.position + direction * length; 
-        }
-    }
-
-    private RaycastHit2D FindClosestCollision()
-    {
-        float closestDistance = float.MaxValue;
-        int closestIndex = -1;
-
-        for (int i = 0; i < Feelers.Length; ++i)
-        {
-            // Skip expensive raycast if previous result is still valid
-            if (RaycastResults[i].collider == null && Physics2D.Raycast(transform.position, RaycastResults[i].point - transform.position, RaycastResults[i].point.magnitude, ObstacleLayerMask))
+            if (m_Debug_DrawPath)
             {
-                RaycastResults[i].collider = null; // Invalidate if no longer hitting
-            } 
+                Gizmos.DrawLine(transform.position, m_Seek.m_TargetPosition);
 
-            // Update closest collision if applicable
-            if (RaycastResults[i].collider != null && RaycastResults[i].distance < closestDistance)
-            {
-                closestDistance = RaycastResults[i].distance;
-                closestIndex = i;
-            }
-        }
-
-        return closestIndex != -1 ? RaycastResults[closestIndex] : new RaycastHit2D(); 
-    }
-
-    private void ApplyFleeForce(Vector2 collisionPoint)
-    {
-        Vector2 fleeDirection = (transform.position - collisionPoint).normalized;
-
-        // Option for distance weighting:
-        // float distanceFactor = Mathf.Clamp01(Vector2.Distance(transform.position, collisionPoint) / Feelers[0].MaxLength);
-        // DesiredVelocity = fleeDirection * Entity.MaxSpeed * distanceFactor;
-
-        DesiredVelocity = fleeDirection * Entity.MaxSpeed;
-        Steering = Maths.MinMagnitude(DesiredVelocity - Entity.Velocity,  Manager.RemainingForce, Manager.MaxForce); 
-    }
-
-    protected override void OnDrawGizmosSelected()
-    {
-        if (Application.isPlaying && DebugShowDebugLines && Active && Manager.Entity)
-        {
-            for (int i = 0; i < Feelers.Length; ++i)
-            {
-                Gizmos.color = Feelers[i].DebugColor;
-                Gizmos.DrawLine(transform.position, RaycastResults[i].point);
-            }
-
-            base.OnDrawGizmosSelected();
-        }
-    }
-}
-
-
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-Sepretion 
-
-
-public override Vector2 CalculateForce()
-{
-    accumulatedSeperationForce = Vector2.zero;
-
-    // Iterate through neighboring entities within FOV and separation range
-    foreach (MovingEntity neighbor in m_Manager.m_Neighbours)
-    {
-        if (neighbor != m_Manager.m_Entity && IsInFOV(neighbor.transform.position))
-        {
-            Vector2 dirToNeighbor = transform.position - neighbor.transform.position;
-            float distance = dirToNeighbor.magnitude;
-
-            // Check if neighbor is within separation range
-            if (distance < m_SeperationRange)
-            {
-                // Calculate normalized direction and scale force based on distance
-                dirToNeighbor.Normalize();
-                float forceMultiplier = Mathf.Clamp01((m_SeperationRange - distance) / m_SeperationRange);
-                accumulatedSeperationForce += dirToNeighbor * forceMultiplier;
+                if (m_AStar.m_Path.Count > 1)
+                {
+                    for (int i = 0; i < m_AStar.m_Path.Count - 1; ++i)
+                    {
+                        Gizmos.DrawLine(m_AStar.m_Path[i], m_AStar.m_Path[i + 1]);
+                    }
+                }
             }
         }
     }
-
-    return accumulatedSeperationForce;
 }
-
-private bool IsInFOV(Vector2 targetPosition)
-{
-    // Calculate direction to target and angle between forward direction and target direction
-    Vector2 dirToTarget = targetPosition - transform.position;
-    float angle = Vector2.Angle(transform.forward, dirToTarget);
-
-    // Check if target is within the specified FOV
-    return Mathf.Abs(angle) <= Mathf.Abs(m_FOV);
-}
-
-
-
-
-
-
-
-Cohension 
-
-
-
-public override Vector2 CalculateForce()
-{
-    Vector2 averageNeighbourPos = Vector2.zero;
-    int neighbourCount = 0;
-
-    // Iterate through neighboring entities within FOV and cohesion range
-    foreach (MovingEntity neighbor in m_Manager.m_Neighbours)
-    {
-        if (neighbor != m_Manager.m_Entity && IsInFOV(neighbor.transform.position))
-        {
-            float distance = Vector2.Distance(transform.position, neighbor.transform.position);
-
-            // Check if neighbor is within cohesion range
-            if (distance < m_CohesionRange)
-            {
-                averageNeighbourPos += neighbor.transform.position;
-                neighbourCount++;
-            }
-        }
-    }
-
-    // Calculate desired direction towards average neighbour position
-    if (neighbourCount > 0)
-    {
-        averageNeighbourPos /= neighbourCount;
-        return (averageNeighbourPos - transform.position).normalized * m_Agent.maxSpeed;
-    }
-    else
-    {
-        return Vector2.zero;
-    }
-}
-
-private bool IsInFOV(Vector2 targetPosition)
-{
-    // Same FOV check as in Separation behaviour
-    Vector2 dirToTarget = targetPosition - transform.position;
-    float angle = Vector2.Angle(transform.forward, dirToTarget);
-    return Mathf.Abs(angle) <= Mathf.Abs(m_FOV);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-//------------------------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------------------------
-
-
-
-
-
